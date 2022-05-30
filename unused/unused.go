@@ -446,7 +446,7 @@ type SerializedObject struct {
 	InGenerated     bool
 }
 
-func typString(obj types.Object) string {
+func TypString(obj types.Object) string {
 	switch obj := obj.(type) {
 	case *types.Func:
 		return "func"
@@ -508,7 +508,7 @@ func serializeObject(pass *analysis.Pass, fset *token.FileSet, obj types.Object)
 		Name:            name,
 		Position:        fset.PositionFor(obj.Pos(), false),
 		DisplayPosition: report.DisplayPosition(fset, obj.Pos()),
-		Kind:            typString(obj),
+		Kind:            TypString(obj),
 		InGenerated:     code.IsGenerated(pass, obj.Pos()),
 	}
 }
@@ -751,7 +751,7 @@ func (n *node) use(n2 *node, kind edgeKind) {
 	n.used = append(n.used, edge{node: n2, kind: kind})
 }
 
-// isIrrelevant reports whether an object's presence in the graph is
+// IsIrrelevant reports whether an object's presence in the graph is
 // of any relevance. A lot of objects will never have outgoing edges,
 // nor meaningful incoming ones. Examples are basic types and empty
 // signatures, among many others.
@@ -759,7 +759,7 @@ func (n *node) use(n2 *node, kind edgeKind) {
 // Dropping these objects should have no effect on correctness, but
 // may improve performance. It also helps with debugging, as it
 // greatly reduces the size of the graph.
-func isIrrelevant(obj interface{}) bool {
+func IsIrrelevant(obj interface{}) bool {
 	if obj, ok := obj.(types.Object); ok {
 		switch obj := obj.(type) {
 		case *types.Var:
@@ -771,7 +771,7 @@ func isIrrelevant(obj interface{}) bool {
 				// We need to track package-level variables
 				return false
 			}
-			return isIrrelevant(obj.Type())
+			return IsIrrelevant(obj.Type())
 		default:
 			return false
 		}
@@ -779,14 +779,14 @@ func isIrrelevant(obj interface{}) bool {
 	if T, ok := obj.(types.Type); ok {
 		switch T := T.(type) {
 		case *types.Array:
-			return isIrrelevant(T.Elem())
+			return IsIrrelevant(T.Elem())
 		case *types.Slice:
-			return isIrrelevant(T.Elem())
+			return IsIrrelevant(T.Elem())
 		case *types.Basic:
 			return true
 		case *types.Tuple:
 			for i := 0; i < T.Len(); i++ {
-				if !isIrrelevant(T.At(i).Type()) {
+				if !IsIrrelevant(T.At(i).Type()) {
 					return false
 				}
 			}
@@ -796,12 +796,12 @@ func isIrrelevant(obj interface{}) bool {
 				return false
 			}
 			for i := 0; i < T.Params().Len(); i++ {
-				if !isIrrelevant(T.Params().At(i)) {
+				if !IsIrrelevant(T.Params().At(i)) {
 					return false
 				}
 			}
 			for i := 0; i < T.Results().Len(); i++ {
-				if !isIrrelevant(T.Results().At(i)) {
+				if !IsIrrelevant(T.Results().At(i)) {
 					return false
 				}
 			}
@@ -809,13 +809,13 @@ func isIrrelevant(obj interface{}) bool {
 		case *types.Interface:
 			return T.NumMethods() == 0 && T.NumEmbeddeds() == 0
 		case *types.Pointer:
-			return isIrrelevant(T.Elem())
+			return IsIrrelevant(T.Elem())
 		case *types.Map:
-			return isIrrelevant(T.Key()) && isIrrelevant(T.Elem())
+			return IsIrrelevant(T.Key()) && IsIrrelevant(T.Elem())
 		case *types.Struct:
 			return T.NumFields() == 0
 		case *types.Chan:
-			return isIrrelevant(T.Elem())
+			return IsIrrelevant(T.Elem())
 		default:
 			return false
 		}
@@ -824,7 +824,7 @@ func isIrrelevant(obj interface{}) bool {
 }
 
 func (g *graph) see(obj interface{}) *node {
-	if isIrrelevant(obj) {
+	if IsIrrelevant(obj) {
 		return nil
 	}
 
@@ -857,7 +857,7 @@ func (g *graph) see(obj interface{}) *node {
 }
 
 func (g *graph) use(used, by interface{}, kind edgeKind) {
-	if isIrrelevant(used) {
+	if IsIrrelevant(used) {
 		return
 	}
 
@@ -1108,7 +1108,7 @@ func (g *graph) entry(pkg *pkg) {
 						if v.Assign != 0 {
 							aliasFor := obj.(*types.TypeName).Type()
 							// (2.3) named types use all their aliases. we can't easily track uses of aliases
-							if isIrrelevant(aliasFor) {
+							if IsIrrelevant(aliasFor) {
 								// We do not track the type this is an
 								// alias for (for example builtins), so
 								// just mark the alias used.
@@ -1365,7 +1365,7 @@ func (g *graph) typ(t types.Type, parent types.Type) {
 	}
 
 	g.seenTypes[t] = struct{}{}
-	if isIrrelevant(t) {
+	if IsIrrelevant(t) {
 		return
 	}
 
@@ -1379,7 +1379,7 @@ func (g *graph) typ(t types.Type, parent types.Type) {
 				g.use(t.Field(i), t, edgeExportedField)
 			} else if t.Field(i).Name() == "_" {
 				g.use(t.Field(i), t, edgeBlankField)
-			} else if isNoCopyType(t.Field(i).Type()) {
+			} else if IsNoCopyType(t.Field(i).Type()) {
 				// (6.1) structs use fields of type NoCopy sentinel
 				g.use(t.Field(i), t, edgeNoCopySentinel)
 			} else if parent == nil {
@@ -1804,13 +1804,13 @@ func (g *graph) instructions(fn *ir.Function) {
 	}
 }
 
-// isNoCopyType reports whether a type represents the NoCopy sentinel
+// IsNoCopyType reports whether a type represents the NoCopy sentinel
 // type. The NoCopy type is a named struct with no fields and exactly
 // one method `func Lock()` that is empty.
 //
 // FIXME(dh): currently we're not checking that the function body is
 // empty.
-func isNoCopyType(typ types.Type) bool {
+func IsNoCopyType(typ types.Type) bool {
 	st, ok := typ.Underlying().(*types.Struct)
 	if !ok {
 		return false
