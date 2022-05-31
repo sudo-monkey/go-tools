@@ -12,6 +12,7 @@ import (
 	"honnef.co/go/tools/staticcheck"
 	"honnef.co/go/tools/stylecheck"
 	"honnef.co/go/tools/unused"
+	"honnef.co/go/tools/unused2"
 )
 
 func main() {
@@ -28,6 +29,7 @@ func main() {
 	cmd.AddAnalyzers(staticcheck.Analyzers...)
 	cmd.AddAnalyzers(stylecheck.Analyzers...)
 	cmd.AddAnalyzers(unused.Analyzer)
+	cmd.AddAnalyzers(unused2.Analyzer)
 
 	if *qf {
 		cmd.AddAnalyzers(quickfix.Analyzers...)

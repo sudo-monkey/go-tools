@@ -46,62 +46,62 @@ var Debug io.Writer
 /*
 
 - packages use:
-  - (1.1) exported named types
-  - (1.2) exported functions
-  - (1.3) exported variables
-  - (1.4) exported constants
-  - (1.5) init functions
-  - (1.6) functions exported to cgo
-  - (1.7) the main function iff in the main package
-  - (1.8) symbols linked via go:linkname
+  - [X] (1.1) exported named types
+  - [X] (1.2) exported functions (but not methods!)
+  - [ ] (1.3) exported variables
+  - [ ] (1.4) exported constants
+  - [X] (1.5) init functions
+  - [ ] (1.6) functions exported to cgo
+  - [X] (1.7) the main function iff in the main package
+  - [ ] (1.8) symbols linked via go:linkname
 
 - named types use:
-  - (2.1) exported methods
-  - (2.2) the type they're based on
-  - (2.3) all their aliases. we can't easily track uses of aliases
+  - [X] (2.1) exported methods
+  - [ ] (2.2) the type they're based on
+  - [ ] (2.3) all their aliases. we can't easily track uses of aliases
     because go/types turns them into uses of the aliased types. assume
     that if a type is used, so are all of its aliases.
-  - (2.4) the pointer type. this aids with eagerly implementing
+  - [ ] (2.4) the pointer type. this aids with eagerly implementing
     interfaces. if a method that implements an interface is defined on
     a pointer receiver, and the pointer type is never used, but the
     named type is, then we still want to mark the method as used.
-  - (2.5) all their type parameters. Unused type parameters are probably useless, but they're a brand new feature and we
+  - [ ] (2.5) all their type parameters. Unused type parameters are probably useless, but they're a brand new feature and we
     don't want to introduce false positives because we couldn't anticipate some novel use-case.
-  - (2.6) all their type arguments
+  - [ ] (2.6) all their type arguments
 
 - variables and constants use:
   - their types
 
 - functions use:
-  - (4.1) all their arguments, return parameters and receivers
-  - (4.2) anonymous functions defined beneath them
-  - (4.3) closures and bound methods.
+  - [ ] (4.1) all their arguments, return parameters and receivers
+  - [ ] (4.2) anonymous functions defined beneath them
+  - [ ] (4.3) closures and bound methods.
     this implements a simplified model where a function is used merely by being referenced, even if it is never called.
     that way we don't have to keep track of closures escaping functions.
-  - (4.4) functions they return. we assume that someone else will call the returned function
-  - (4.5) functions/interface methods they call
+  - [ ] (4.4) functions they return. we assume that someone else will call the returned function
+  - [ ] (4.5) functions/interface methods they call
   - types they instantiate or convert to
-  - (4.7) fields they access
-  - (4.8) types of all instructions
-  - (4.9) package-level variables they assign to iff in tests (sinks for benchmarks)
-  - (4.10) all their type parameters. See 2.5 for reasoning.
+  - [ ] (4.7) fields they access
+  - [ ] (4.8) types of all instructions
+  - [ ] (4.9) package-level variables they assign to iff in tests (sinks for benchmarks)
+  - [ ] (4.10) all their type parameters. See 2.5 for reasoning.
 
 - conversions use:
-  - (5.1) when converting between two equivalent structs, the fields in
+  - [ ] (5.1) when converting between two equivalent structs, the fields in
     either struct use each other. the fields are relevant for the
     conversion, but only if the fields are also accessed outside the
     conversion.
-  - (5.2) when converting to or from unsafe.Pointer, mark all fields as used.
+  - [ ] (5.2) when converting to or from unsafe.Pointer, mark all fields as used.
 
 - structs use:
-  - (6.1) fields of type NoCopy sentinel
-  - (6.2) exported fields
-  - (6.3) embedded fields that help implement interfaces (either fully implements it, or contributes required methods) (recursively)
-  - (6.4) embedded fields that have exported methods (recursively)
-  - (6.5) embedded structs that have exported fields (recursively)
+  - [ ] (6.1) fields of type NoCopy sentinel
+  - [ ] (6.2) exported fields
+  - [ ] (6.3) embedded fields that help implement interfaces (either fully implements it, or contributes required methods) (recursively)
+  - [ ] (6.4) embedded fields that have exported methods (recursively)
+  - [ ] (6.5) embedded structs that have exported fields (recursively)
 
-- (7.1) field accesses use fields
-- (7.2) fields use their types
+- [ ] (7.1) field accesses use fields
+- [ ] (7.2) fields use their types
 
 - (8.0) How we handle interfaces:
   - (8.1) We do not technically care about interfaces that only consist of
@@ -549,9 +549,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 				debugf("n%d [label=%q, color=%q];\n", n.id, fmt.Sprintf("(%T) %s", n.obj, n.obj), color)
 			}
 			for _, e := range n.used {
-				for i := edgeKind(1); i < 64; i++ {
+				for i := EdgeKind(1); i < 64; i++ {
 					if e.kind.is(1 << i) {
-						debugf("n%d -> n%d [label=%q];\n", n.id, e.node.id, edgeKind(1<<i))
+						debugf("n%d -> n%d [label=%q];\n", n.id, e.node.id, EdgeKind(1<<i))
 					}
 				}
 			}
@@ -686,7 +686,7 @@ func (constGroup) String() string { return "const group" }
 
 type edge struct {
 	node *node
-	kind edgeKind
+	kind EdgeKind
 }
 
 type node struct {
@@ -746,7 +746,7 @@ func (g *graph) newNode(obj interface{}) *node {
 	}
 }
 
-func (n *node) use(n2 *node, kind edgeKind) {
+func (n *node) use(n2 *node, kind EdgeKind) {
 	assert(n2 != nil)
 	n.used = append(n.used, edge{node: n2, kind: kind})
 }
@@ -856,7 +856,7 @@ func (g *graph) see(obj interface{}) *node {
 	return node
 }
 
-func (g *graph) use(used, by interface{}, kind edgeKind) {
+func (g *graph) use(used, by interface{}, kind EdgeKind) {
 	if IsIrrelevant(used) {
 		return
 	}
@@ -893,7 +893,7 @@ func (g *graph) use(used, by interface{}, kind edgeKind) {
 	}
 }
 
-func (g *graph) seeAndUse(used, by interface{}, kind edgeKind) *node {
+func (g *graph) seeAndUse(used, by interface{}, kind EdgeKind) *node {
 	n := g.see(used)
 	g.use(used, by, kind)
 	return n
@@ -1302,7 +1302,7 @@ func (g *graph) entry(pkg *pkg) {
 	}
 }
 
-func (g *graph) useMethod(t types.Type, sel *types.Selection, by interface{}, kind edgeKind) {
+func (g *graph) useMethod(t types.Type, sel *types.Selection, by interface{}, kind EdgeKind) {
 	obj := sel.Obj().(*types.Func)
 	path := sel.Index()
 	assert(obj != nil)

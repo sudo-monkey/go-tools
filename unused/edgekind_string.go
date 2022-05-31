@@ -60,7 +60,7 @@ func _() {
 
 const _edgeKind_name = "edgeAliasedgeBlankFieldedgeAnonymousStructedgeCgoExportededgeConstGroupedgeElementTypeedgeEmbeddedInterfaceedgeExportedConstantedgeExportedFieldedgeExportedFunctionedgeExportedMethodedgeExportedTypeedgeExportedVariableedgeExtendsExportedFieldsedgeExtendsExportedMethodSetedgeFieldAccessedgeFunctionArgumentedgeFunctionResultedgeFunctionSignatureedgeImplementsedgeInstructionOperandedgeInterfaceCalledgeInterfaceMethodedgeKeyTypeedgeLinknameedgeMainFunctionedgeNamedTypeedgeNetRPCRegisteredgeNoCopySentineledgeProvidesMethodedgeReceiveredgeRuntimeFunctionedgeSignatureedgeStructConversionedgeTestSinkedgeTupleElementedgeTypeedgeTypeNameedgeUnderlyingTypeedgePointerTypeedgeUnsafeConversionedgeUsedConstantedgeVarDecledgeIgnorededgeSamePointeredgeTypeParamedgeTypeArgedgeUnionTerm"
 
-var _edgeKind_map = map[edgeKind]string{
+var _edgeKind_map = map[EdgeKind]string{
 	1:               _edgeKind_name[0:9],
 	2:               _edgeKind_name[9:23],
 	4:               _edgeKind_name[23:42],
@@ -111,7 +111,7 @@ var _edgeKind_map = map[edgeKind]string{
 	140737488355328: _edgeKind_name[765:778],
 }
 
-func (i edgeKind) String() string {
+func (i EdgeKind) String() string {
 	if str, ok := _edgeKind_map[i]; ok {
 		return str
 	}

@@ -1,14 +1,14 @@
 package unused
 
 //go:generate go run golang.org/x/tools/cmd/stringer@master -type edgeKind
-type edgeKind uint64
+type EdgeKind uint64
 
-func (e edgeKind) is(o edgeKind) bool {
+func (e EdgeKind) is(o EdgeKind) bool {
 	return e&o != 0
 }
 
 const (
-	edgeAlias edgeKind = 1 << iota
+	edgeAlias EdgeKind = 1 << iota
 	edgeBlankField
 	edgeAnonymousStruct
 	edgeCgoExported
