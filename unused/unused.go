@@ -3,6 +3,11 @@ package unused
 
 // TODO(dh): don't add instantiated types/methods to the graph. add the origin types/methods.
 
+// TODO do we need to track pointer types, or could we just dereference pointer types and track those?
+
+// TODO can we limit ourselves to tracking named types, or more specifically their type names? that way the graph
+// consists entirely of types.Objects.
+
 import (
 	"fmt"
 	"go/ast"
@@ -73,18 +78,18 @@ var Debug io.Writer
   - their types
 
 - functions use:
-  - [ ] (4.1) all their arguments, return parameters and receivers
-  - [ ] (4.2) anonymous functions defined beneath them
-  - [ ] (4.3) closures and bound methods.
+  - [X] (4.1) all their arguments, return parameters and receivers
+  - [X] (4.2) anonymous functions defined beneath them
+  - [X] (4.3) closures and bound methods.
     this implements a simplified model where a function is used merely by being referenced, even if it is never called.
     that way we don't have to keep track of closures escaping functions.
-  - [ ] (4.4) functions they return. we assume that someone else will call the returned function
-  - [ ] (4.5) functions/interface methods they call
-  - types they instantiate or convert to
-  - [ ] (4.7) fields they access
+  - [X] (4.4) functions they return. we assume that someone else will call the returned function
+  - [X] (4.5) functions/interface methods they call
+  - [X] (4.6) types they instantiate or convert to
+  - [X] (4.7) fields they access
   - [ ] (4.8) types of all instructions
   - [ ] (4.9) package-level variables they assign to iff in tests (sinks for benchmarks)
-  - [ ] (4.10) all their type parameters. See 2.5 for reasoning.
+  - [X] (4.10) all their type parameters. See 2.5 for reasoning.
 
 - conversions use:
   - [ ] (5.1) when converting between two equivalent structs, the fields in
