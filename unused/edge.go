@@ -1,6 +1,6 @@
 package unused
 
-//go:generate go run golang.org/x/tools/cmd/stringer@master -type edgeKind
+//go:generate go run golang.org/x/tools/cmd/stringer@master -type EdgeKind
 type EdgeKind uint64
 
 func (e EdgeKind) is(o EdgeKind) bool {
@@ -35,7 +35,6 @@ const (
 	edgeLinkname
 	edgeMainFunction
 	edgeNamedType
-	edgeNetRPCRegister
 	edgeNoCopySentinel
 	edgeProvidesMethod
 	edgeReceiver

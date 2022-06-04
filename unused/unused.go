@@ -53,24 +53,26 @@ var Debug io.Writer
 - packages use:
   - [X] (1.1) exported named types
   - [X] (1.2) exported functions (but not methods!)
-  - [ ] (1.3) exported variables
-  - [ ] (1.4) exported constants
+  - [X] (1.3) exported variables
+  - [X] (1.4) exported constants
   - [X] (1.5) init functions
-  - [ ] (1.6) functions exported to cgo
+  - [X] (1.6) functions exported to cgo
   - [X] (1.7) the main function iff in the main package
-  - [ ] (1.8) symbols linked via go:linkname
+  - [X] (1.8) symbols linked via go:linkname
 
 - named types use:
   - [X] (2.1) exported methods
-  - [ ] (2.2) the type they're based on
+  - [X] (2.2) the type they're based on
   - [ ] (2.3) all their aliases. we can't easily track uses of aliases
     because go/types turns them into uses of the aliased types. assume
     that if a type is used, so are all of its aliases.
+    ^ this will no longer be necessary with our AST-based rewrite
   - [ ] (2.4) the pointer type. this aids with eagerly implementing
     interfaces. if a method that implements an interface is defined on
     a pointer receiver, and the pointer type is never used, but the
     named type is, then we still want to mark the method as used.
-  - [ ] (2.5) all their type parameters. Unused type parameters are probably useless, but they're a brand new feature and we
+    ^ this will no longer be necessary with our AST-based rewrite
+  - [X] (2.5) all their type parameters. Unused type parameters are probably useless, but they're a brand new feature and we
     don't want to introduce false positives because we couldn't anticipate some novel use-case.
   - [ ] (2.6) all their type arguments
 
@@ -84,29 +86,29 @@ var Debug io.Writer
     this implements a simplified model where a function is used merely by being referenced, even if it is never called.
     that way we don't have to keep track of closures escaping functions.
   - [X] (4.4) functions they return. we assume that someone else will call the returned function
-  - [X] (4.5) functions/interface methods they call
-  - [X] (4.6) types they instantiate or convert to
+  - [ ] (4.5) functions/interface methods they call
+  - [ ] (4.6) types they instantiate or convert to
   - [X] (4.7) fields they access
   - [ ] (4.8) types of all instructions
-  - [ ] (4.9) package-level variables they assign to iff in tests (sinks for benchmarks)
+  - [X] (4.9) package-level variables they assign to iff in tests (sinks for benchmarks)
   - [X] (4.10) all their type parameters. See 2.5 for reasoning.
 
 - conversions use:
-  - [ ] (5.1) when converting between two equivalent structs, the fields in
+  - [X] (5.1) when converting between two equivalent structs, the fields in
     either struct use each other. the fields are relevant for the
     conversion, but only if the fields are also accessed outside the
     conversion.
   - [ ] (5.2) when converting to or from unsafe.Pointer, mark all fields as used.
 
 - structs use:
-  - [ ] (6.1) fields of type NoCopy sentinel
-  - [ ] (6.2) exported fields
+  - [X] (6.1) fields of type NoCopy sentinel
+  - [X] (6.2) exported fields
   - [ ] (6.3) embedded fields that help implement interfaces (either fully implements it, or contributes required methods) (recursively)
   - [ ] (6.4) embedded fields that have exported methods (recursively)
   - [ ] (6.5) embedded structs that have exported fields (recursively)
 
-- [ ] (7.1) field accesses use fields
-- [ ] (7.2) fields use their types
+- [X] (7.1) field accesses use fields
+- [X] (7.2) fields use their types
 
 - (8.0) How we handle interfaces:
   - (8.1) We do not technically care about interfaces that only consist of
@@ -141,10 +143,10 @@ var Debug io.Writer
   - (9.8) runtime functions that may be called from user code via the compiler
 
 - const groups:
-  (10.1) if one constant out of a block of constants is used, mark all
-  of them used. a lot of the time, unused constants exist for the sake
-  of completeness. See also
-  https://github.com/dominikh/go-tools/issues/365
+  - [X] (10.1) if one constant out of a block of constants is used, mark all
+    of them used. a lot of the time, unused constants exist for the sake
+    of completeness. See also
+    https://github.com/dominikh/go-tools/issues/365
 
 
 - (11.1) anonymous struct types use all their fields. we cannot
@@ -170,7 +172,7 @@ func assert(b bool) {
 
 // Functions defined in the Go runtime that may be called through
 // compiler magic or via assembly.
-var runtimeFuncs = map[string]bool{
+var RuntimeFuncs = map[string]bool{
 	// The first part of the list is copied from
 	// cmd/compile/internal/gc/builtin.go, var runtimeDecls
 	"newobject":            true,
@@ -518,7 +520,7 @@ func serializeObject(pass *analysis.Pass, fset *token.FileSet, obj types.Object)
 	}
 }
 
-func debugf(f string, v ...interface{}) {
+func Debugf(f string, v ...interface{}) {
 	if Debug != nil {
 		fmt.Fprintf(Debug, f, v...)
 	}
@@ -545,24 +547,24 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	if Debug != nil {
 		debugNode := func(n *node) {
 			if n.obj == nil {
-				debugf("n%d [label=\"Root\"];\n", n.id)
+				Debugf("n%d [label=\"Root\"];\n", n.id)
 			} else {
 				color := "red"
 				if n.seen {
 					color = "green"
 				}
-				debugf("n%d [label=%q, color=%q];\n", n.id, fmt.Sprintf("(%T) %s", n.obj, n.obj), color)
+				Debugf("n%d [label=%q, color=%q];\n", n.id, fmt.Sprintf("(%T) %s", n.obj, n.obj), color)
 			}
 			for _, e := range n.used {
 				for i := EdgeKind(1); i < 64; i++ {
 					if e.kind.is(1 << i) {
-						debugf("n%d -> n%d [label=%q];\n", n.id, e.node.id, EdgeKind(1<<i))
+						Debugf("n%d -> n%d [label=%q];\n", n.id, e.node.id, EdgeKind(1<<i))
 					}
 				}
 			}
 		}
 
-		debugf("digraph{\n")
+		Debugf("digraph{\n")
 		debugNode(g.Root)
 		for _, v := range g.Nodes {
 			debugNode(v)
@@ -571,7 +573,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			debugNode(node)
 		}
 
-		debugf("}\n")
+		Debugf("}\n")
 	}
 
 	return Result{Used: used, Unused: unused}, nil
@@ -1166,7 +1168,7 @@ func (g *graph) entry(pkg *pkg) {
 				// (1.7) packages use the main function iff in the main package
 				g.use(mObj, nil, edgeMainFunction)
 			}
-			if pkg.Pkg.Path() == "runtime" && runtimeFuncs[m.Name()] {
+			if pkg.Pkg.Path() == "runtime" && RuntimeFuncs[m.Name()] {
 				// (9.8) runtime functions that may be called from user code via the compiler
 				g.use(mObj, nil, edgeRuntimeFunction)
 			}
@@ -1668,6 +1670,7 @@ func (g *graph) instructions(fn *ir.Function) {
 			case *ir.ChangeType:
 				// conversion type handled generically
 
+				// TODO should this use DereferenceR instead?
 				s1, ok1 := typeutil.CoreType(typeutil.Dereference(instr.Type())).(*types.Struct)
 				s2, ok2 := typeutil.CoreType(typeutil.Dereference(instr.X.Type())).(*types.Struct)
 				if ok1 && ok2 {
