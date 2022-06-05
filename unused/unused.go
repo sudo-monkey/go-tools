@@ -1216,7 +1216,7 @@ func (g *graph) entry(pkg *pkg) {
 	for _, t := range notIfaces {
 		ms := pkg.IR.Prog.MethodSets.MethodSet(t)
 		for _, iface := range ifaces {
-			if sels, ok := g.implements(t, iface, ms); ok {
+			if sels, ok := Implements(t, iface, ms); ok {
 				for _, sel := range sels {
 					g.useMethod(t, sel, t, edgeImplements)
 				}

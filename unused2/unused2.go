@@ -21,8 +21,6 @@ import (
 
 // XXX vet all code for proper use of core types
 
-// XXX handle cgo and go:linkname
-
 // XXX handle implementing interfaces
 
 // XXX aliases/function vars are temporary and will vanish once we replace unused with unused2
@@ -32,6 +30,7 @@ type SerializedResult = unused.SerializedResult
 type SerializedObject = unused.SerializedObject
 
 var Serialize = unused.Serialize
+var Implements = unused.Implements
 
 func debugf(f string, v ...interface{}) {
 	// XXX respect -debug.unused-graph flag for destination
@@ -124,6 +123,9 @@ type graph struct {
 	Nodes       map[types.Object]*node
 	pass        *analysis.Pass
 	nodeCounter uint64
+
+	// package-level named types
+	namedTypes []*types.TypeName
 }
 
 func (g *graph) newNode(obj types.Object) *node {
@@ -153,8 +155,11 @@ type edge struct {
 
 type node struct {
 	// OPT(dh): we could trivially turn this from AoS into SoA. Benchmark if that has any benefits.
+	// OPT(dh): we can put the id, seen, and quiet into a single 64 bit variable, with 62 bits for the ID
+	// OPT(dh): ^ a 32 bit variable would probably suffice. 30 bits would allow for a billion different objects, which would, at a minimum, require a 3 GB large source file.
+	// OPT(dh): ^ benchmark if these changes have any measurable effect on CPU or memory usage
 
-	obj interface{}
+	obj types.Object
 	id  uint64
 
 	// OPT(dh): evaluate using a map instead of a slice to avoid
@@ -173,11 +178,24 @@ func (g *graph) see(obj types.Object) {
 	g.node(obj)
 }
 
+func ourIsIrrelevant(obj types.Object) bool {
+	// XXX rename this function
+	switch obj.(type) {
+	case *types.PkgName:
+		return true
+	default:
+		return false
+	}
+}
+
 func (g *graph) use(used, by types.Object, kind edgeKind) {
 	if used.Pkg() != g.pass.Pkg {
 		return
 	}
-	// XXX use isIrrelevant
+
+	if ourIsIrrelevant(used) {
+		return
+	}
 
 	nUsed := g.node(used)
 	nBy := g.node(by)
@@ -217,9 +235,129 @@ func (g *graph) entry(pass *analysis.Pass) {
 			}
 		}
 	}
+
 	for _, f := range pass.Files {
 		for _, decl := range f.Decls {
 			g.decl(decl, nil)
+		}
+	}
+
+	// (8.0) handle interfaces
+	seen := map[*types.Interface]struct{}{}
+	for _, tv := range pass.TypesInfo.Types {
+		iface, ok := tv.Type.Underlying().(*types.Interface)
+		if !ok {
+			continue
+		}
+		if iface.NumMethods() == 0 {
+			// There's no point in looking at the empty interface
+			continue
+		}
+		if _, ok := seen[iface]; ok {
+			continue
+		}
+		seen[iface] = struct{}{}
+
+		// OPT(dh): (8.1) we only need interfaces that have unexported methods
+
+		for _, named := range g.namedTypes {
+			if _, ok := named.Type().Underlying().(*types.Interface); ok {
+				// We don't care about interfaces implementing interfaces; all their methods are already used, anyway
+				continue
+			}
+			// OPT(dh): do we already have the method set available?
+			ms := types.NewMethodSet(named.Type())
+			if sels, ok := Implements(named.Type(), iface, ms); ok {
+				for _, sel := range sels {
+					g.use(sel.Obj(), named, edgeImplements)
+				}
+			}
+		}
+	}
+
+	// XXX handle ignore directives
+	type ignoredKey struct {
+		file string
+		line int
+	}
+	ignores := map[ignoredKey]struct{}{}
+	directives := pass.ResultOf[directives.Analyzer].([]lint.Directive)
+	for _, dir := range directives {
+		if dir.Command != "ignore" && dir.Command != "file-ignore" {
+			continue
+		}
+		if len(dir.Arguments) == 0 {
+			continue
+		}
+		for _, check := range strings.Split(dir.Arguments[0], ",") {
+			if check == "U1000" {
+				pos := pass.Fset.PositionFor(dir.Node.Pos(), false)
+				var key ignoredKey
+				switch dir.Command {
+				case "ignore":
+					key = ignoredKey{
+						pos.Filename,
+						pos.Line,
+					}
+				case "file-ignore":
+					key = ignoredKey{
+						pos.Filename,
+						-1,
+					}
+				}
+
+				ignores[key] = struct{}{}
+				break
+			}
+		}
+	}
+
+	if len(ignores) > 0 {
+		// all objects annotated with a //lint:ignore U1000 are considered used
+		for obj := range g.Nodes {
+			if obj, ok := obj.(types.Object); ok {
+				pos := pass.Fset.PositionFor(obj.Pos(), false)
+				key1 := ignoredKey{
+					pos.Filename,
+					pos.Line,
+				}
+				key2 := ignoredKey{
+					pos.Filename,
+					-1,
+				}
+				_, ok := ignores[key1]
+				if !ok {
+					_, ok = ignores[key2]
+				}
+				if ok {
+					g.use(obj, nil, edgeIgnored)
+
+					// use methods and fields of ignored types
+					if obj, ok := obj.(*types.TypeName); ok {
+						if obj.IsAlias() {
+							if typ, ok := obj.Type().(*types.Named); ok && typ.Obj().Pkg() != obj.Pkg() {
+								// This is an alias of a named type in another package.
+								// Don't walk its fields or methods; we don't have to,
+								// and it breaks an assertion in graph.use because we're using an object that we haven't seen before.
+								//
+								// For aliases to types in the same package, we do want to ignore the fields and methods,
+								// because ignoring the alias should ignore the aliased type.
+								continue
+							}
+						}
+						if typ, ok := obj.Type().(*types.Named); ok {
+							for i := 0; i < typ.NumMethods(); i++ {
+								g.use(typ.Method(i), nil, edgeIgnored)
+							}
+						}
+						if typ, ok := obj.Type().Underlying().(*types.Struct); ok {
+							for i := 0; i < typ.NumFields(); i++ {
+								g.use(typ.Field(i), nil, edgeIgnored)
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 }
@@ -319,6 +457,7 @@ func (g *graph) read(node ast.Node, by types.Object) {
 		}
 
 		for _, field := range node.List {
+			// XXX arguments and receivers can be unnamed
 			for _, name := range field.Names {
 				g.read(name, by)
 				g.read(field.Type, g.pass.TypesInfo.ObjectOf(name))
@@ -329,10 +468,23 @@ func (g *graph) read(node ast.Node, by types.Object) {
 		g.read(node.Value, by)
 
 	case *ast.StructType:
+		// This is only used for anonymous struct types, not named ones.
+
 		for _, field := range node.Fields.List {
-			for _, name := range field.Names {
-				g.read(name, by)
-				g.read(field.Type, g.pass.TypesInfo.ObjectOf(name))
+			if len(field.Names) == 0 {
+				// embedded field
+				// XXX implement
+
+				// XXX how do we get the object for the field? embedded fields can be (pointers to) (qualified)
+				// (instantiated) identifiers. we'd rather not have to dig into the syntax.
+
+				// XXX when code reads a field from an embedded struct, then the embedded field has to be marked read,
+				// too. we can't do that purely via the AST, we need to look at selections and the implicits.
+			} else {
+				for _, name := range field.Names {
+					g.read(name, by)
+					g.read(field.Type, g.pass.TypesInfo.ObjectOf(name))
+				}
 			}
 		}
 
@@ -341,6 +493,8 @@ func (g *graph) read(node ast.Node, by types.Object) {
 		g.read(node.Type, by)
 
 	case *ast.InterfaceType:
+		// This is only used for anonymous interface types, not named ones.
+
 		// XXX implement
 
 	case *ast.Ellipsis:
@@ -490,12 +644,13 @@ func (g *graph) decl(decl ast.Decl, parent types.Object) {
 			}
 
 		case token.TYPE:
-			// XXX handle aliases
-
 			for _, spec := range decl.Specs {
 				tspec := spec.(*ast.TypeSpec)
 				obj := g.pass.TypesInfo.ObjectOf(tspec.Name).(*types.TypeName)
 				g.see(obj)
+				if !tspec.Assign.IsValid() {
+					g.namedTypes = append(g.namedTypes, obj)
+				}
 				if token.IsExported(tspec.Name.Name) && isGlobal(obj) {
 					// (1.1) packages use exported named types
 					g.use(g.pass.TypesInfo.ObjectOf(tspec.Name), nil, edgeExportedType)
@@ -612,6 +767,8 @@ func (g *graph) stmt(stmt ast.Stmt, by types.Object) {
 			g.write(lhs, by)
 		}
 		for _, rhs := range stmt.Rhs {
+			// Note: it would be more accurate to have the rhs used by the lhs, but it ultimately doesn't matter,
+			// because local variables are always end up used, anyway.
 			g.read(rhs, by)
 		}
 
@@ -729,6 +886,7 @@ func (g *graph) namedType(typ *types.TypeName, spec ast.Expr) {
 		// Named structs are special in that its unexported fields are only used if they're being written to. That is,
 		// the fields are not used by the named type itself, nor are the types of the fields.
 		for _, field := range st.Fields.List {
+			// XXX fields can be unnamed
 			for _, name := range field.Names {
 				obj := g.pass.TypesInfo.ObjectOf(name)
 				g.see(obj)
@@ -755,32 +913,52 @@ func (g *graph) namedType(typ *types.TypeName, spec ast.Expr) {
 func (g *graph) results() (used, unused []types.Object) {
 	g.color(g.Root)
 
-	// OPT(dh): can we find meaningful initial capacities for the used and unused slices?
-
 	for _, n := range g.Nodes {
-		if obj, ok := n.obj.(types.Object); ok {
-			switch obj := obj.(type) {
-			case *types.Var:
-				// don't report unnamed variables (interface embedding)
-				if obj.Name() == "" && obj.IsField() {
-					continue
-				}
-			case types.Object:
-				// XXX do we still need this?
-				if obj.Name() == "_" {
-					continue
-				}
-			}
+		name, ok := n.obj.(*types.TypeName)
+		if !ok {
+			continue
+		}
 
-			if obj.Pkg() != nil {
-				if n.seen {
-					used = append(used, obj)
-				} else if !n.quiet {
-					if obj.Pkg() != g.pass.Pkg {
-						continue
-					}
-					unused = append(unused, obj)
+		if st, ok := name.Type().Underlying().(*types.Struct); !n.seen && ok {
+			// Don't report unused fields in unused structs.
+			for i := 0; i < st.NumFields(); i++ {
+				f := st.Field(i)
+				nf, ok := g.Nodes[f]
+				if !ok {
+					continue
 				}
+				nf.quiet = true
+			}
+		}
+
+		// XXX don't report unused methods in unused interfaces
+	}
+
+	// OPT(dh): can we find meaningful initial capacities for the used and unused slices?
+	for _, n := range g.Nodes {
+		if n.obj.Name() == "_" {
+			continue
+		}
+		switch obj := n.obj.(type) {
+		case *types.Var:
+			if obj.Name() == "" && obj.IsField() {
+				// don't report unnamed variables (interface embedding)
+				continue
+			}
+			if !obj.IsField() && obj.Parent() != obj.Pkg().Scope() {
+				// Skip local variables, they're always used
+				continue
+			}
+		}
+
+		if n.obj.Pkg() != nil {
+			if n.seen {
+				used = append(used, n.obj)
+			} else if !n.quiet {
+				if n.obj.Pkg() != g.pass.Pkg {
+					continue
+				}
+				unused = append(unused, n.obj)
 			}
 		}
 	}
@@ -801,7 +979,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	// XXX don't flag methods in unused interfaces
 	// XXX don't flag local variables
 
-	if false {
+	if true {
 		// XXX make debug printing conditional
 		debugNode := func(n *node) {
 			if n.obj == nil {
